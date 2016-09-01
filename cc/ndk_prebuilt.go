@@ -42,6 +42,9 @@ func getNdkLibDir(ctx android.ModuleContext, toolchain config.Toolchain, version
 	if toolchain.Is64Bit() && ctx.Arch().ArchType != android.Arm64 {
 		suffix = "64"
 	}
+	if ctx.Arch().ArchVariant == "mips32r6" {
+		suffix = "r6"
+	}
 	return android.PathForSource(ctx, fmt.Sprintf("prebuilts/ndk/current/platforms/android-%s/arch-%s/usr/lib%s",
 		version, toolchain.Name(), suffix))
 }
@@ -166,7 +169,11 @@ func ndkPrebuiltStaticStlFactory() android.Module {
 func getNdkStlLibDir(ctx android.ModuleContext, stl string) android.SourcePath {
 	libDir := "cxx-stl/llvm-libc++/libs"
 	ndkSrcRoot := "prebuilts/ndk/current/sources"
-	return android.PathForSource(ctx, ndkSrcRoot).Join(ctx, libDir, ctx.Arch().Abi[0])
+	abiDir := ctx.Arch().Abi[0]
+	if ctx.Arch().ArchVariant == "mips32r6" {
+		abiDir = "mips32r6"
+	}
+	return android.PathForSource(ctx, ndkSrcRoot).Join(ctx, libDir, abiDir)
 }
 
 func (ndk *ndkPrebuiltStlLinker) link(ctx ModuleContext, flags Flags,
