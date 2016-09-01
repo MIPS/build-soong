@@ -2019,8 +2019,13 @@ func (library *toolchainLibraryLinker) link(ctx ModuleContext,
 // than to the system image).
 
 func getNdkLibDir(ctx common.AndroidModuleContext, toolchain Toolchain, version string) common.SourcePath {
-	return common.PathForSource(ctx, fmt.Sprintf("prebuilts/ndk/current/platforms/android-%s/arch-%s/usr/lib",
-		version, toolchain.Name()))
+	suffix := ""
+	if ctx.Arch().ArchVariant == "mips32r6" ||
+	   ctx.Arch().ArchVariant == "mips32r6msa" {
+		suffix = "r6"
+	}
+	return common.PathForSource(ctx, fmt.Sprintf("prebuilts/ndk/current/platforms/android-%s/arch-%s/usr/lib%s",
+		version, toolchain.Name(), suffix))
 }
 
 func ndkPrebuiltModuleToPath(ctx common.AndroidModuleContext, toolchain Toolchain,
@@ -2137,7 +2142,12 @@ func getNdkStlLibDir(ctx common.AndroidModuleContext, toolchain Toolchain, stl s
 
 	if libDir != "" {
 		ndkSrcRoot := "prebuilts/ndk/current/sources"
-		return common.PathForSource(ctx, ndkSrcRoot).Join(ctx, libDir, ctx.Arch().Abi[0])
+		abiDir := ctx.Arch().Abi[0]
+		if ctx.Arch().ArchVariant == "mips32r6" ||
+		   ctx.Arch().ArchVariant == "mips32r6msa" {
+			abiDir = "mips32r6"
+		}
+		return common.PathForSource(ctx, ndkSrcRoot).Join(ctx, libDir, abiDir)
 	}
 
 	ctx.ModuleErrorf("Unknown NDK STL: %s", stl)
