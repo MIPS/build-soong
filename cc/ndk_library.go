@@ -315,6 +315,9 @@ func (stub *stubDecorator) install(ctx ModuleContext, path android.Path) {
 	if ctx.toolchain().Is64Bit() && arch != "arm64" {
 		libDir = "lib64"
 	}
+	if ctx.Target().Arch.ArchVariant == "mips32r6" {
+		libDir = "libr6"
+	}
 
 	installDir := getNdkInstallBase(ctx).Join(ctx, fmt.Sprintf(
 		"platforms/android-%s/arch-%s/usr/%s", apiLevel, arch, libDir))
