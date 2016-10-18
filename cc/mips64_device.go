@@ -79,6 +79,12 @@ var (
 			"-mips64r6",
 			"-msynci",
 		},
+		"mips64r6msa": []string{
+			"-mips64r6",
+			"-mmsa",
+			"-mfp64"
+			"-msynci",
+		},
 	}
 )
 
@@ -88,6 +94,8 @@ const (
 
 func init() {
 	common.RegisterArchFeatures(common.Mips64, "mips64r6",
+		"rev6")
+    common.RegisterArchFeatures(common.Mips64, "mips64r6msa",
 		"rev6")
 
 	pctx.StaticVariable("mips64GccVersion", mips64GccVersion)
