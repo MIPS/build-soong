@@ -110,6 +110,13 @@ var (
 			"-mno-odd-spreg",
 			"-msynci",
 		},
+		"mips32r6msa": []string{
+			"-mips32r6",
+			"-mmsa",
+			"-mfp64",
+			"-mno-odd-spreg",
+			"-msynci",
+		},
 	}
 )
 
@@ -119,6 +126,8 @@ const (
 
 func init() {
 	common.RegisterArchFeatures(common.Mips, "mips32r6",
+		"rev6")
+	common.RegisterArchFeatures(common.Mips, "mips32r6msa",
 		"rev6")
 
 	pctx.StaticVariable("mipsGccVersion", mipsGccVersion)
