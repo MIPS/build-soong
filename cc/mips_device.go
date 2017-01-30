@@ -104,6 +104,13 @@ var (
 			"-mdspr2",
 			"-msynci",
 		},
+		"mips32r5": []string{
+			"-mips32r2",       // gcc and clang lack 32r5 prebuilts
+			"-mfp64",          // required in modules using MSA ops;
+			"-mno-odd-spreg",  // required, to support trapped emula
+			"-mmsa",
+			"-msynci",
+		},
 		"mips32r6": []string{
 			"-mips32r6",
 			"-mfp64",
