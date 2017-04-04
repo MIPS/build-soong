@@ -159,7 +159,6 @@ type archProperties struct {
 			Mips32r2dsp_fp     interface{} `blueprint:"filter(android:\"arch_variant\")"`
 			Mips32r2dspr2_fp   interface{} `blueprint:"filter(android:\"arch_variant\")"`
 			Mips32r6           interface{} `blueprint:"filter(android:\"arch_variant\")"`
-			Mips32r6msa        interface{} `blueprint:"filter(android:\"arch_variant\")"`
 
 			// Mips arch features
 			Rev6 interface{} `blueprint:"filter(android:\"arch_variant\")"`
@@ -170,9 +169,8 @@ type archProperties struct {
 			Embed `blueprint:"filter(android:\"arch_variant\")"`
 
 			// Mips64 arch variants
-			Mips64r2    interface{} `blueprint:"filter(android:\"arch_variant\")"`
-			Mips64r6    interface{} `blueprint:"filter(android:\"arch_variant\")"`
-			Mips64r6msa interface{} `blueprint:"filter(android:\"arch_variant\")"`
+			Mips64r2 interface{} `blueprint:"filter(android:\"arch_variant\")"`
+			Mips64r6 interface{} `blueprint:"filter(android:\"arch_variant\")"`
 
 			// Mips64 arch features
 			Rev6 interface{} `blueprint:"filter(android:\"arch_variant\")"`
@@ -930,7 +928,6 @@ func decodeMegaDevice() ([]Arch, error) {
 		{"mips", "mips32r2-fp", "", []string{"mips"}},
 		{"mips", "mips32r2-fp-xburst", "", []string{"mips"}},
 		{"mips", "mips32r6", "", []string{"mips32r6"}},
-		{"mips", "mips32r6msa", "", []string{"mips32r6"}},
 		// mips32r2dsp[r2]-fp fails in the assembler for divdf3.c in compiler-rt:
 		// (same errors in make and soong)
 		//   Error: invalid operands `mtlo $ac0,$11'
@@ -940,7 +937,6 @@ func decodeMegaDevice() ([]Arch, error) {
 		// mips64r2 is mismatching 64r2 and 64r6 libraries during linking to libgcc
 		//{"mips64", "mips64r2", "", []string{"mips64"}},
 		{"mips64", "mips64r6", "", []string{"mips64"}},
-		{"mips64", "mips64r6msa", "", []string{"mips64"}},
 		{"x86", "", "", []string{"x86"}},
 		{"x86", "atom", "", []string{"x86"}},
 		{"x86", "haswell", "", []string{"x86"}},
