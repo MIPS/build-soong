@@ -90,7 +90,7 @@ var (
 		"mips32r2-fp-xburst": []string{
 			"-mips32r2",
 			"-mfp32",
-			"-modd-spreg",
+			"-mno-odd-spreg",
 			"-mno-fused-madd",
 			"-Wa,-mmxu",
 			"-mno-synci",
