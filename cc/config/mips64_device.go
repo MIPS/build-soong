@@ -81,6 +81,8 @@ var (
 		},
 		"mips64r6": []string{
 			"-mips64r6",
+			"-mmsa",
+			"-mfp64",
 			"-msynci",
 		},
 	}
