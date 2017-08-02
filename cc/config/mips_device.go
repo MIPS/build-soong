@@ -112,6 +112,7 @@ var (
 		"mips32r6": []string{
 			"-mips32r6",
 			"-mfp64",
+			"-mmsa",
 			"-mno-odd-spreg",
 			"-msynci",
 
