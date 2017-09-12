@@ -109,6 +109,13 @@ var (
 			"-mdspr2",
 			"-msynci",
 		},
+		"mips32r5": []string{
+			"-mips32r2",       // gcc and clang lack 32r5 prebuilts
+			"-mfp64",          // required in modules using MSA ops;
+			"-mno-odd-spreg",  // required, to support trapped emula
+			"-mmsa",
+			"-msynci",
+		},
 		"mips32r6": []string{
 			"-mips32r6",
 			"-mfp64",
@@ -133,6 +140,7 @@ func init() {
 		"mips32r2_fp_xburst",
 		"mips32r2dsp_fp",
 		"mips32r2dspr2_fp",
+		"mips32r5",
 		"mips32r6")
 	android.RegisterArchFeatures(android.Mips, "rev6")
 	android.RegisterArchVariantFeatures(android.Mips, "mips32r6",
