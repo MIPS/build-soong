@@ -144,8 +144,11 @@ func init() {
 		"msa")
 	android.RegisterArchVariantFeatures(android.Mips, "mips32r2dspr2_fp",
 		"dspr2")
+	android.RegisterArchVariantFeatures(android.Mips, "mips32r5",
+		"msa")
 	android.RegisterArchVariantFeatures(android.Mips, "mips32r6",
-		"rev6")
+		"rev6",
+		"msa")
 
 	pctx.StaticVariable("mipsGccVersion", mipsGccVersion)
 

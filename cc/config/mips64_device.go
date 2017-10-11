@@ -100,7 +100,8 @@ func init() {
 		"rev6",
 		"msa")
 	android.RegisterArchVariantFeatures(android.Mips64, "mips64r6",
-		"rev6")
+		"rev6",
+		"msa")
 
 	pctx.StaticVariable("mips64GccVersion", mips64GccVersion)
 
