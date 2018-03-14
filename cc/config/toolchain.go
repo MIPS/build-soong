@@ -215,10 +215,6 @@ func UndefinedBehaviorSanitizerRuntimeLibrary(t Toolchain) string {
 	return SanitizerRuntimeLibrary(t, "ubsan_standalone")
 }
 
-func UndefinedBehaviorSanitizerMinimalRuntimeLibrary(t Toolchain) string {
-	return SanitizerRuntimeLibrary(t, "ubsan_minimal")
-}
-
 func ThreadSanitizerRuntimeLibrary(t Toolchain) string {
 	return SanitizerRuntimeLibrary(t, "tsan")
 }
