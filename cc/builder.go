@@ -67,7 +67,9 @@ var (
 
 	partialLd = pctx.AndroidStaticRule("partialLd",
 		blueprint.RuleParams{
-			Command:     "$ldCmd -nostdlib -Wl,-r ${in} -o ${out} ${ldFlags}",
+			// Without -no-pie, clang 7.0 adds -pie to link Android files,
+			// but -r and -pie cannot be used together.
+			Command:     "$ldCmd -nostdlib -no-pie -Wl,-r ${in} -o ${out} ${ldFlags}",
 			CommandDeps: []string{"$ldCmd"},
 		},
 		"ldCmd", "ldFlags")
@@ -197,18 +199,17 @@ var (
 	_ = pctx.SourcePathVariable("sAbiDiffer", "prebuilts/clang-tools/${config.HostPrebuiltTag}/bin/header-abi-diff")
 
 	sAbiDiff = pctx.AndroidRuleFunc("sAbiDiff",
-		func(config android.Config) (blueprint.RuleParams, error) {
+		func(ctx android.PackageRuleContext) blueprint.RuleParams {
 
 			commandStr := "($sAbiDiffer $allowFlags -lib $libName -arch $arch -check-all-apis -o ${out} -new $in -old $referenceDump)"
-			distDir := config.ProductVariables.DistDir
-			if distDir != nil && *distDir != "" {
-				distAbiDiffDir := *distDir + "/abidiffs/"
-				commandStr += "  || (mkdir -p " + distAbiDiffDir + " && cp ${out} " + distAbiDiffDir + " && exit 1)"
+			distAbiDiffDir := android.PathForDist(ctx, "abidiffs")
+			if distAbiDiffDir.Valid() {
+				commandStr += "  || (mkdir -p " + distAbiDiffDir.String() + " && cp ${out} " + distAbiDiffDir.String() + " && exit 1)"
 			}
 			return blueprint.RuleParams{
 				Command:     commandStr,
 				CommandDeps: []string{"$sAbiDiffer"},
-			}, nil
+			}
 		},
 		"allowFlags", "referenceDump", "libName", "arch")
 

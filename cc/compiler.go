@@ -106,6 +106,9 @@ type BaseCompilerProperties struct {
 		// list of directories relative to the Blueprints file that will
 		// be added to the aidl include paths.
 		Local_include_dirs []string
+
+		// whether to generate traces (for systrace) for this interface
+		Generate_traces *bool
 	}
 
 	Renderscript struct {
@@ -180,7 +183,7 @@ type CompiledInterface interface {
 }
 
 func (compiler *baseCompiler) Srcs() android.Paths {
-	return compiler.srcs
+	return append(android.Paths{}, compiler.srcs...)
 }
 
 func (compiler *baseCompiler) appendCflags(flags []string) {
@@ -283,7 +286,7 @@ func (compiler *baseCompiler) compilerFlags(ctx ModuleContext, flags Flags, deps
 		// behavior here, and the NDK always has all the NDK headers available.
 		flags.SystemIncludeFlags = append(flags.SystemIncludeFlags,
 			"-isystem "+getCurrentIncludePath(ctx).String(),
-			"-isystem "+getCurrentIncludePath(ctx).Join(ctx, tc.ClangTriple()).String())
+			"-isystem "+getCurrentIncludePath(ctx).Join(ctx, config.NDKTriple(tc)).String())
 
 		// Traditionally this has come from android/api-level.h, but with the
 		// libc headers unified it must be set by the build system since we
@@ -305,8 +308,13 @@ func (compiler *baseCompiler) compilerFlags(ctx ModuleContext, flags Flags, deps
 	}
 
 	if ctx.useVndk() {
+		// sdkVersion() returns VNDK version for vendor modules.
+		version := ctx.sdkVersion()
+		if version == "current" {
+			version = "__ANDROID_API_FUTURE__"
+		}
 		flags.GlobalFlags = append(flags.GlobalFlags,
-			"-D__ANDROID_API__=__ANDROID_API_FUTURE__", "-D__ANDROID_VNDK__")
+			"-D__ANDROID_API__="+version, "-D__ANDROID_VNDK__")
 	}
 
 	instructionSet := String(compiler.Properties.Instruction_set)
@@ -367,10 +375,6 @@ func (compiler *baseCompiler) compilerFlags(ctx ModuleContext, flags Flags, deps
 			tc.Cflags(),
 			"${config.CommonGlobalCflags}",
 			fmt.Sprintf("${config.%sGlobalCflags}", hod))
-	}
-
-	if Bool(ctx.Config().ProductVariables.Brillo) {
-		flags.GlobalFlags = append(flags.GlobalFlags, "-D__BRILLO__")
 	}
 
 	if ctx.Device() {
@@ -475,6 +479,10 @@ func (compiler *baseCompiler) compilerFlags(ctx ModuleContext, flags Flags, deps
 		if len(compiler.Properties.Aidl.Include_dirs) > 0 {
 			rootAidlIncludeDirs := android.PathsForSource(ctx, compiler.Properties.Aidl.Include_dirs)
 			flags.aidlFlags = append(flags.aidlFlags, includeDirsToFlags(rootAidlIncludeDirs))
+		}
+
+		if Bool(compiler.Properties.Aidl.Generate_traces) {
+			flags.aidlFlags = append(flags.aidlFlags, "-t")
 		}
 
 		flags.GlobalFlags = append(flags.GlobalFlags,

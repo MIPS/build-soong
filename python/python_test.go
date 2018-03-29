@@ -48,8 +48,8 @@ var (
 		" First file: in module %s at path %q." +
 		" Second file: in module %s at path %q."
 	noSrcFileErr      = moduleVariantErrTemplate + "doesn't have any source files!"
-	badSrcFileExtErr  = moduleVariantErrTemplate + "srcs: found non (.py) file: %q!"
-	badDataFileExtErr = moduleVariantErrTemplate + "data: found (.py) file: %q!"
+	badSrcFileExtErr  = moduleVariantErrTemplate + "srcs: found non (.py|.proto) file: %q!"
+	badDataFileExtErr = moduleVariantErrTemplate + "data: found (.py|.proto) file: %q!"
 	bpFile            = "Blueprints"
 
 	data = []struct {
@@ -312,10 +312,10 @@ var (
 						"runfiles/e/default_py3.py",
 						"runfiles/e/file4.py",
 					},
-					srcsZip: "@prefix@/.intermediates/dir/bin/PY3/bin.zip",
+					srcsZip: "@prefix@/.intermediates/dir/bin/PY3/bin.py.srcszip",
 					depsSrcsZips: []string{
-						"@prefix@/.intermediates/dir/lib5/PY3/lib5.zip",
-						"@prefix@/.intermediates/dir/lib6/PY3/lib6.zip",
+						"@prefix@/.intermediates/dir/lib5/PY3/lib5.py.srcszip",
+						"@prefix@/.intermediates/dir/lib6/PY3/lib6.py.srcszip",
 					},
 				},
 			},
@@ -342,7 +342,7 @@ func TestPythonModule(t *testing.T) {
 			ctx.Register()
 			ctx.MockFileSystem(d.mockFiles)
 			_, testErrs := ctx.ParseBlueprintsFiles(bpFile)
-			fail(t, testErrs)
+			android.FailIfErrored(t, testErrs)
 			_, actErrs := ctx.PrepareBuildActions(config)
 			if len(actErrs) > 0 {
 				testErrs = append(testErrs, expectErrors(t, actErrs, d.errors)...)
@@ -356,7 +356,7 @@ func TestPythonModule(t *testing.T) {
 							e.depsSrcsZips)...)
 				}
 			}
-			fail(t, testErrs)
+			android.FailIfErrored(t, testErrs)
 		})
 	}
 }
@@ -441,13 +441,4 @@ func setupBuildEnv(t *testing.T) (config android.Config, buildDir string) {
 
 func tearDownBuildEnv(buildDir string) {
 	os.RemoveAll(buildDir)
-}
-
-func fail(t *testing.T, errs []error) {
-	if len(errs) > 0 {
-		for _, err := range errs {
-			t.Error(err)
-		}
-		t.FailNow()
-	}
 }

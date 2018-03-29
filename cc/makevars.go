@@ -196,9 +196,6 @@ func makeVarsToolchain(ctx android.MakeVarsContext, secondPrefix string,
 		hod = "Device"
 	}
 
-	if target.Os.Class == android.Device && Bool(ctx.Config().ProductVariables.Brillo) {
-		productExtraCflags += "-D__BRILLO__"
-	}
 	if target.Os.Class == android.Host && Bool(ctx.Config().ProductVariables.HostStaticBinaries) {
 		productExtraLdflags += "-static"
 	}
@@ -309,7 +306,7 @@ func makeVarsToolchain(ctx android.MakeVarsContext, secondPrefix string,
 		ctx.Strict(makePrefix+"STRIP", gccCmd(toolchain, "strip"))
 		ctx.Strict(makePrefix+"GCC_VERSION", toolchain.GccVersion())
 		ctx.Strict(makePrefix+"NDK_GCC_VERSION", toolchain.GccVersion())
-		ctx.Strict(makePrefix+"NDK_TRIPLE", toolchain.ClangTriple())
+		ctx.Strict(makePrefix+"NDK_TRIPLE", config.NDKTriple(toolchain))
 	}
 
 	if target.Os.Class == android.Host || target.Os.Class == android.HostCross {
