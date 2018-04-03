@@ -135,6 +135,7 @@ type toolchainMips struct {
 	toolchain32Bit
 	cflags, clangCflags                   string
 	toolchainCflags, toolchainClangCflags string
+	mipsSanitizerRuntimeLibraryArch       string
 }
 
 func (t *toolchainMips) Name() string {
@@ -205,16 +206,24 @@ func (t *toolchainMips) ClangLdflags() string {
 	return "${config.MipsClangLdflags}"
 }
 
-func (toolchainMips) SanitizerRuntimeLibraryArch() string {
-	return "mips"
+func (t *toolchainMips) SanitizerRuntimeLibraryArch() string {
+	return t.mipsSanitizerRuntimeLibraryArch
 }
 
 func mipsToolchainFactory(arch android.Arch) Toolchain {
+	var mipsSanitizerRuntimeLibraryArchLocal string
+	if arch.ArchVariant == "mips32r6" {
+		mipsSanitizerRuntimeLibraryArchLocal = "mips32r6"
+	} else {
+		mipsSanitizerRuntimeLibraryArchLocal = "mips"
+	}
+
 	return &toolchainMips{
 		cflags:               "${config.MipsCflags}",
 		clangCflags:          "${config.MipsClangCflags}",
 		toolchainCflags:      "${config.Mips" + arch.ArchVariant + "VariantCflags}",
 		toolchainClangCflags: "${config.Mips" + arch.ArchVariant + "VariantClangCflags}",
+		mipsSanitizerRuntimeLibraryArch: mipsSanitizerRuntimeLibraryArchLocal,
 	}
 }
 
