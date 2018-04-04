@@ -147,6 +147,10 @@ func runMakeProductConfig(ctx Context, config Config) {
 		"CCACHE_SLOPPINESS",
 		"CCACHE_BASEDIR",
 		"CCACHE_CPP2",
+		// This MIPS variable is needed for selecting the right
+		// target directory in clang for locating static libraries:
+		// prebuilts/clang/host/linux-x86/soong/clangprebuilts.go
+		"ARCH_MIPS_REV6",
 	}
 
 	allVars := append(append([]string{
