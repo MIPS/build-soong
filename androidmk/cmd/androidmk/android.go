@@ -64,6 +64,9 @@ var rewriteProperties = map[string](func(variableAssignmentContext) error){
 	"LOCAL_MODULE_SUFFIX":           skip, // TODO
 	"LOCAL_PATH":                    skip, // Nothing to do, except maybe avoid the "./" in paths?
 	"LOCAL_PRELINK_MODULE":          skip, // Already phased out
+	"LOCAL_BUILT_MODULE_STEM":       skip,
+	"LOCAL_USE_AAPT2":               skip, // Always enabled in Soong
+	"LOCAL_JAR_EXCLUDE_FILES":       skip, // Soong never excludes files from jars
 }
 
 // adds a group of properties all having the same type
@@ -94,6 +97,7 @@ func init() {
 			"LOCAL_NOTICE_FILE":             "notice",
 			"LOCAL_JAVA_LANGUAGE_VERSION":   "java_version",
 			"LOCAL_INSTRUMENTATION_FOR":     "instrumentation_for",
+			"LOCAL_MANIFEST_FILE":           "manifest",
 
 			"LOCAL_DEX_PREOPT_PROFILE_CLASS_LISTING": "dex_preopt.profile",
 		})
@@ -111,6 +115,7 @@ func init() {
 			"LOCAL_CONLYFLAGS":                    "conlyflags",
 			"LOCAL_CPPFLAGS":                      "cppflags",
 			"LOCAL_REQUIRED_MODULES":              "required",
+			"LOCAL_OVERRIDES_MODULES":             "overrides",
 			"LOCAL_LDLIBS":                        "host_ldlibs",
 			"LOCAL_CLANG_CFLAGS":                  "clang_cflags",
 			"LOCAL_YACCFLAGS":                     "yaccflags",
@@ -120,6 +125,7 @@ func init() {
 			"LOCAL_EXPORT_SHARED_LIBRARY_HEADERS": "export_shared_lib_headers",
 			"LOCAL_EXPORT_STATIC_LIBRARY_HEADERS": "export_static_lib_headers",
 			"LOCAL_INIT_RC":                       "init_rc",
+			"LOCAL_VINTF_FRAGMENTS":               "vintf_fragments",
 			"LOCAL_TIDY_FLAGS":                    "tidy_flags",
 			// TODO: This is comma-separated, not space-separated
 			"LOCAL_TIDY_CHECKS":           "tidy_checks",
@@ -127,6 +133,7 @@ func init() {
 			"LOCAL_RENDERSCRIPT_FLAGS":    "renderscript.flags",
 
 			"LOCAL_JAVA_RESOURCE_DIRS":    "java_resource_dirs",
+			"LOCAL_RESOURCE_DIR":          "resource_dirs",
 			"LOCAL_JAVACFLAGS":            "javacflags",
 			"LOCAL_ERROR_PRONE_FLAGS":     "errorprone.javacflags",
 			"LOCAL_DX_FLAGS":              "dxflags",
@@ -141,7 +148,13 @@ func init() {
 
 			"LOCAL_PROGUARD_FLAGS":      "optimize.proguard_flags",
 			"LOCAL_PROGUARD_FLAG_FILES": "optimize.proguard_flag_files",
+
+			// These will be rewritten to libs/static_libs by bpfix, after their presence is used to convert
+			// java_library_static to android_library.
+			"LOCAL_SHARED_ANDROID_LIBRARIES": "android_libs",
+			"LOCAL_STATIC_ANDROID_LIBRARIES": "android_static_libs",
 		})
+
 	addStandardProperties(bpparser.BoolType,
 		map[string]string{
 			// Bool properties
@@ -155,6 +168,7 @@ func init() {
 			"LOCAL_NO_STANDARD_LIBRARIES":    "no_standard_libs",
 			"LOCAL_PACK_MODULE_RELOCATIONS":  "pack_relocations",
 			"LOCAL_TIDY":                     "tidy",
+			"LOCAL_USE_CLANG_LLD":            "use_clang_lld",
 			"LOCAL_PROPRIETARY_MODULE":       "proprietary",
 			"LOCAL_VENDOR_MODULE":            "vendor",
 			"LOCAL_ODM_MODULE":               "device_specific",

@@ -177,6 +177,7 @@ type Module interface {
 	InstallInData() bool
 	InstallInSanitizerDir() bool
 	SkipInstall()
+	ExportedToMake() bool
 
 	AddProperties(props ...interface{})
 	GetProperties() []interface{}
@@ -240,6 +241,9 @@ type commonProperties struct {
 
 	// init.rc files to be installed if this module is installed
 	Init_rc []string
+
+	// VINTF manifest fragments to be installed if this module is installed
+	Vintf_fragments []string
 
 	// names of other modules to install if this module is installed
 	Required []string `android:"arch_variant"`
@@ -505,6 +509,10 @@ func (a *ModuleBase) Enabled() bool {
 
 func (a *ModuleBase) SkipInstall() {
 	a.commonProperties.SkipInstall = true
+}
+
+func (a *ModuleBase) ExportedToMake() bool {
+	return a.commonProperties.NamespaceExportedToMake
 }
 
 func (a *ModuleBase) computeInstallDeps(

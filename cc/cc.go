@@ -52,7 +52,7 @@ func init() {
 		ctx.TopDown("tsan_deps", sanitizerDepsMutator(tsan))
 		ctx.BottomUp("tsan", sanitizerMutator(tsan)).Parallel()
 
-		ctx.TopDown("minimal_runtime_deps", minimalRuntimeDepsMutator())
+		ctx.TopDown("sanitize_runtime_deps", sanitizerRuntimeDepsMutator())
 
 		ctx.BottomUp("coverage", coverageLinkingMutator).Parallel()
 		ctx.TopDown("vndk_deps", sabiDepsMutator)
@@ -539,13 +539,14 @@ func (ctx *moduleContextImpl) isVndkExt() bool {
 
 // Create source abi dumps if the module belongs to the list of VndkLibraries.
 func (ctx *moduleContextImpl) createVndkSourceAbiDump() bool {
+	skipAbiChecks := ctx.ctx.Config().IsEnvTrue("SKIP_ABI_CHECKS")
 	isUnsanitizedVariant := true
 	sanitize := ctx.mod.sanitize
 	if sanitize != nil {
 		isUnsanitizedVariant = sanitize.isUnsanitizedVariant()
 	}
 	vendorAvailable := Bool(ctx.mod.VendorProperties.Vendor_available)
-	return isUnsanitizedVariant && ctx.ctx.Device() && ((ctx.useVndk() && ctx.isVndk() && vendorAvailable) || inList(ctx.baseModuleName(), llndkLibraries))
+	return !skipAbiChecks && isUnsanitizedVariant && ctx.ctx.Device() && ((ctx.useVndk() && ctx.isVndk() && vendorAvailable) || inList(ctx.baseModuleName(), llndkLibraries))
 }
 
 func (ctx *moduleContextImpl) selectedStl() string {
@@ -922,6 +923,16 @@ func (c *Module) DepsMutator(actx android.BottomUpMutatorContext) {
 					}
 				} else if ctx.useVndk() && inList(entry, llndkLibraries) {
 					nonvariantLibs = append(nonvariantLibs, entry+llndkLibrarySuffix)
+				} else if (ctx.Platform() || ctx.ProductSpecific()) && inList(entry, vendorPublicLibraries) {
+					vendorPublicLib := entry + vendorPublicLibrarySuffix
+					if actx.OtherModuleExists(vendorPublicLib) {
+						nonvariantLibs = append(nonvariantLibs, vendorPublicLib)
+					} else {
+						// This can happen if vendor_public_library module is defined in a
+						// namespace that isn't visible to the current module. In that case,
+						// link to the original library.
+						nonvariantLibs = append(nonvariantLibs, entry)
+					}
 				} else {
 					nonvariantLibs = append(nonvariantLibs, entry)
 				}
@@ -1052,10 +1063,6 @@ func checkLinkType(ctx android.ModuleContext, from *Module, to *Module, tag depe
 		// These are always allowed
 		return
 	}
-	if _, ok := to.linker.(*ndkPrebuiltLibraryLinker); ok {
-		// These are allowed, but they don't set sdk_version
-		return
-	}
 	if _, ok := to.linker.(*ndkPrebuiltStlLinker); ok {
 		// These are allowed, but they don't set sdk_version
 		return
@@ -1076,31 +1083,32 @@ func checkLinkType(ctx android.ModuleContext, from *Module, to *Module, tag depe
 	// API level, as it is only valid to link against older or equivalent
 	// APIs.
 
-	if String(from.Properties.Sdk_version) == "current" {
-		// Current can link against anything.
-		return
-	} else if String(to.Properties.Sdk_version) == "current" {
-		// Current can't be linked against by anything else.
-		ctx.ModuleErrorf("links %q built against newer API version %q",
-			ctx.OtherModuleName(to), "current")
-	}
+	// Current can link against anything.
+	if String(from.Properties.Sdk_version) != "current" {
+		// Otherwise we need to check.
+		if String(to.Properties.Sdk_version) == "current" {
+			// Current can't be linked against by anything else.
+			ctx.ModuleErrorf("links %q built against newer API version %q",
+				ctx.OtherModuleName(to), "current")
+		} else {
+			fromApi, err := strconv.Atoi(String(from.Properties.Sdk_version))
+			if err != nil {
+				ctx.PropertyErrorf("sdk_version",
+					"Invalid sdk_version value (must be int or current): %q",
+					String(from.Properties.Sdk_version))
+			}
+			toApi, err := strconv.Atoi(String(to.Properties.Sdk_version))
+			if err != nil {
+				ctx.PropertyErrorf("sdk_version",
+					"Invalid sdk_version value (must be int or current): %q",
+					String(to.Properties.Sdk_version))
+			}
 
-	fromApi, err := strconv.Atoi(String(from.Properties.Sdk_version))
-	if err != nil {
-		ctx.PropertyErrorf("sdk_version",
-			"Invalid sdk_version value (must be int): %q",
-			String(from.Properties.Sdk_version))
-	}
-	toApi, err := strconv.Atoi(String(to.Properties.Sdk_version))
-	if err != nil {
-		ctx.PropertyErrorf("sdk_version",
-			"Invalid sdk_version value (must be int): %q",
-			String(to.Properties.Sdk_version))
-	}
-
-	if toApi > fromApi {
-		ctx.ModuleErrorf("links %q built against newer API version %q",
-			ctx.OtherModuleName(to), String(to.Properties.Sdk_version))
+			if toApi > fromApi {
+				ctx.ModuleErrorf("links %q built against newer API version %q",
+					ctx.OtherModuleName(to), String(to.Properties.Sdk_version))
+			}
+		}
 	}
 
 	// Also check that the two STL choices are compatible.
@@ -1108,17 +1116,11 @@ func checkLinkType(ctx android.ModuleContext, from *Module, to *Module, tag depe
 	toStl := to.stl.Properties.SelectedStl
 	if fromStl == "" || toStl == "" {
 		// Libraries that don't use the STL are unrestricted.
-		return
-	}
-
-	if fromStl == "ndk_system" || toStl == "ndk_system" {
+	} else if fromStl == "ndk_system" || toStl == "ndk_system" {
 		// We can be permissive with the system "STL" since it is only the C++
 		// ABI layer, but in the future we should make sure that everyone is
 		// using either libc++ or nothing.
-		return
-	}
-
-	if getNdkStlFamily(ctx, from) != getNdkStlFamily(ctx, to) {
+	} else if getNdkStlFamily(ctx, from) != getNdkStlFamily(ctx, to) {
 		ctx.ModuleErrorf("uses %q and depends on %q which uses incompatible %q",
 			from.stl.Properties.SelectedStl, ctx.OtherModuleName(to),
 			to.stl.Properties.SelectedStl)
@@ -1310,14 +1312,18 @@ func (c *Module) depsToPaths(ctx android.ModuleContext) PathDeps {
 		switch depTag {
 		case sharedDepTag, sharedExportDepTag, lateSharedDepTag:
 			libName := strings.TrimSuffix(depName, llndkLibrarySuffix)
+			libName = strings.TrimSuffix(libName, vendorPublicLibrarySuffix)
 			libName = strings.TrimPrefix(libName, "prebuilt_")
 			isLLndk := inList(libName, llndkLibraries)
+			isVendorPublicLib := inList(libName, vendorPublicLibraries)
 			var makeLibName string
 			bothVendorAndCoreVariantsExist := ccDep.hasVendorVariant() || isLLndk
 			if c.useVndk() && bothVendorAndCoreVariantsExist {
 				// The vendor module in Make will have been renamed to not conflict with the core
 				// module, so update the dependency name here accordingly.
 				makeLibName = libName + vendorSuffix
+			} else if (ctx.Platform() || ctx.ProductSpecific()) && isVendorPublicLib {
+				makeLibName = libName + vendorPublicLibrarySuffix
 			} else {
 				makeLibName = libName
 			}
@@ -1575,6 +1581,7 @@ func getCurrentNdkPrebuiltVersion(ctx DepsContext) string {
 }
 
 var Bool = proptools.Bool
+var BoolDefault = proptools.BoolDefault
 var BoolPtr = proptools.BoolPtr
 var String = proptools.String
 var StringPtr = proptools.StringPtr

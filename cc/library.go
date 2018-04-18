@@ -601,25 +601,6 @@ func (library *libraryDecorator) linkShared(ctx ModuleContext,
 	sharedLibs := deps.SharedLibs
 	sharedLibs = append(sharedLibs, deps.LateSharedLibs...)
 
-	// TODO(danalbert): Clean this up when soong supports prebuilts.
-	if strings.HasPrefix(ctx.selectedStl(), "ndk_libc++") {
-		libDir := getNdkStlLibDir(ctx, "libc++")
-
-		if strings.HasSuffix(ctx.selectedStl(), "_shared") {
-			deps.StaticLibs = append(deps.StaticLibs,
-				libDir.Join(ctx, "libandroid_support.a"))
-		} else {
-			deps.StaticLibs = append(deps.StaticLibs,
-				libDir.Join(ctx, "libc++abi.a"),
-				libDir.Join(ctx, "libandroid_support.a"))
-		}
-
-		if ctx.Arch().ArchType == android.Arm {
-			deps.StaticLibs = append(deps.StaticLibs,
-				libDir.Join(ctx, "libunwind.a"))
-		}
-	}
-
 	linkerDeps = append(linkerDeps, deps.SharedLibsDeps...)
 	linkerDeps = append(linkerDeps, deps.LateSharedLibsDeps...)
 	linkerDeps = append(linkerDeps, objs.tidyFiles...)
@@ -719,13 +700,11 @@ func (library *libraryDecorator) link(ctx ModuleContext,
 }
 
 func (library *libraryDecorator) buildStatic() bool {
-	return library.MutatedProperties.BuildStatic &&
-		(library.Properties.Static.Enabled == nil || *library.Properties.Static.Enabled)
+	return library.MutatedProperties.BuildStatic && BoolDefault(library.Properties.Static.Enabled, true)
 }
 
 func (library *libraryDecorator) buildShared() bool {
-	return library.MutatedProperties.BuildShared &&
-		(library.Properties.Shared.Enabled == nil || *library.Properties.Shared.Enabled)
+	return library.MutatedProperties.BuildShared && BoolDefault(library.Properties.Shared.Enabled, true)
 }
 
 func (library *libraryDecorator) getWholeStaticMissingDeps() []string {

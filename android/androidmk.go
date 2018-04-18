@@ -72,7 +72,7 @@ func (c *androidMkSingleton) GenerateBuildActions(ctx SingletonContext) {
 
 	sort.Sort(AndroidModulesByName{androidMkModulesList, ctx})
 
-	transMk := PathForOutput(ctx, "Android"+String(ctx.Config().ProductVariables.Make_suffix)+".mk")
+	transMk := PathForOutput(ctx, "Android"+String(ctx.Config().productVariables.Make_suffix)+".mk")
 	if ctx.Failed() {
 		return
 	}
@@ -226,6 +226,9 @@ func translateAndroidMkModule(ctx SingletonContext, w io.Writer, mod blueprint.M
 
 		if len(amod.commonProperties.Init_rc) > 0 {
 			fmt.Fprintln(&data.preamble, "LOCAL_INIT_RC := ", strings.Join(amod.commonProperties.Init_rc, " "))
+		}
+		if len(amod.commonProperties.Vintf_fragments) > 0 {
+			fmt.Fprintln(&data.preamble, "LOCAL_VINTF_FRAGMENTS := ", strings.Join(amod.commonProperties.Vintf_fragments, " "))
 		}
 		if Bool(amod.commonProperties.Proprietary) {
 			fmt.Fprintln(&data.preamble, "LOCAL_PROPRIETARY_MODULE := true")

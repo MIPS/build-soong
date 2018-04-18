@@ -59,41 +59,44 @@ func testApp(t *testing.T, bp string) *android.TestContext {
 }
 
 func TestApp(t *testing.T) {
-	ctx := testApp(t, `
-		android_app {
-			name: "foo",
-			srcs: ["a.java"],
-		}
-	`)
+	for _, moduleType := range []string{"android_app", "android_library"} {
+		t.Run(moduleType, func(t *testing.T) {
+			ctx := testApp(t, moduleType+` {
+					name: "foo",
+					srcs: ["a.java"],
+				}
+			`)
 
-	foo := ctx.ModuleForTests("foo", "android_common")
+			foo := ctx.ModuleForTests("foo", "android_common")
 
-	expectedLinkImplicits := []string{"AndroidManifest.xml"}
+			expectedLinkImplicits := []string{"AndroidManifest.xml"}
 
-	frameworkRes := ctx.ModuleForTests("framework-res", "android_common")
-	expectedLinkImplicits = append(expectedLinkImplicits,
-		frameworkRes.Output("package-res.apk").Output.String())
+			frameworkRes := ctx.ModuleForTests("framework-res", "android_common")
+			expectedLinkImplicits = append(expectedLinkImplicits,
+				frameworkRes.Output("package-res.apk").Output.String())
 
-	// Test the mapping from input files to compiled output file names
-	compile := foo.Output(compiledResourceFiles[0])
-	if !reflect.DeepEqual(resourceFiles, compile.Inputs.Strings()) {
-		t.Errorf("expected aapt2 compile inputs expected:\n  %#v\n got:\n  %#v",
-			resourceFiles, compile.Inputs.Strings())
-	}
+			// Test the mapping from input files to compiled output file names
+			compile := foo.Output(compiledResourceFiles[0])
+			if !reflect.DeepEqual(resourceFiles, compile.Inputs.Strings()) {
+				t.Errorf("expected aapt2 compile inputs expected:\n  %#v\n got:\n  %#v",
+					resourceFiles, compile.Inputs.Strings())
+			}
 
-	compiledResourceOutputs := compile.Outputs.Strings()
-	sort.Strings(compiledResourceOutputs)
+			compiledResourceOutputs := compile.Outputs.Strings()
+			sort.Strings(compiledResourceOutputs)
 
-	expectedLinkImplicits = append(expectedLinkImplicits, compiledResourceOutputs...)
+			expectedLinkImplicits = append(expectedLinkImplicits, compiledResourceOutputs...)
 
-	list := foo.Output("aapt2/res.list")
-	expectedLinkImplicits = append(expectedLinkImplicits, list.Output.String())
+			list := foo.Output("aapt2/res.list")
+			expectedLinkImplicits = append(expectedLinkImplicits, list.Output.String())
 
-	// Check that the link rule uses
-	res := ctx.ModuleForTests("foo", "android_common").Output("package-res.apk")
-	if !reflect.DeepEqual(expectedLinkImplicits, res.Implicits.Strings()) {
-		t.Errorf("expected aapt2 link implicits expected:\n  %#v\n got:\n  %#v",
-			expectedLinkImplicits, res.Implicits.Strings())
+			// Check that the link rule uses
+			res := ctx.ModuleForTests("foo", "android_common").Output("package-res.apk")
+			if !reflect.DeepEqual(expectedLinkImplicits, res.Implicits.Strings()) {
+				t.Errorf("expected aapt2 link implicits expected:\n  %#v\n got:\n  %#v",
+					expectedLinkImplicits, res.Implicits.Strings())
+			}
+		})
 	}
 }
 
@@ -188,12 +191,12 @@ func TestEnforceRRO(t *testing.T) {
 	for _, testCase := range testEnforceRROTests {
 		t.Run(testCase.name, func(t *testing.T) {
 			config := testConfig(nil)
-			config.ProductVariables.ResourceOverlays = &resourceOverlays
+			config.TestProductVariables.ResourceOverlays = &resourceOverlays
 			if testCase.enforceRROTargets != nil {
-				config.ProductVariables.EnforceRROTargets = &testCase.enforceRROTargets
+				config.TestProductVariables.EnforceRROTargets = &testCase.enforceRROTargets
 			}
 			if testCase.enforceRROExcludedOverlays != nil {
-				config.ProductVariables.EnforceRROExcludedOverlays = &testCase.enforceRROExcludedOverlays
+				config.TestProductVariables.EnforceRROExcludedOverlays = &testCase.enforceRROExcludedOverlays
 			}
 
 			ctx := testAppContext(config, bp, fs)

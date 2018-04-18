@@ -89,16 +89,27 @@ func makeVarsProvider(ctx android.MakeVarsContext) {
 	ctx.Strict("GLOBAL_CLANG_CPPFLAGS_NO_OVERRIDE", "")
 	ctx.Strict("NDK_PREBUILT_SHARED_LIBRARIES", strings.Join(ndkPrebuiltSharedLibs, " "))
 
-	if ctx.Config().ProductVariables.DeviceVndkVersion != nil {
-		ctx.Strict("BOARD_VNDK_VERSION", *ctx.Config().ProductVariables.DeviceVndkVersion)
-	} else {
-		ctx.Strict("BOARD_VNDK_VERSION", "")
-	}
+	ctx.Strict("BOARD_VNDK_VERSION", ctx.DeviceConfig().VndkVersion())
 
 	ctx.Strict("VNDK_CORE_LIBRARIES", strings.Join(vndkCoreLibraries, " "))
 	ctx.Strict("VNDK_SAMEPROCESS_LIBRARIES", strings.Join(vndkSpLibraries, " "))
 	ctx.Strict("LLNDK_LIBRARIES", strings.Join(llndkLibraries, " "))
 	ctx.Strict("VNDK_PRIVATE_LIBRARIES", strings.Join(vndkPrivateLibraries, " "))
+
+	// Filter vendor_public_library that are exported to make
+	exportedVendorPublicLibraries := []string{}
+	ctx.SingletonContext().VisitAllModules(func(module android.Module) {
+		if ccModule, ok := module.(*Module); ok {
+			baseName := ccModule.BaseModuleName()
+			if inList(baseName, vendorPublicLibraries) && module.ExportedToMake() {
+				if !inList(baseName, exportedVendorPublicLibraries) {
+					exportedVendorPublicLibraries = append(exportedVendorPublicLibraries, baseName)
+				}
+			}
+		}
+	})
+	sort.Strings(exportedVendorPublicLibraries)
+	ctx.Strict("VENDOR_PUBLIC_LIBRARIES", strings.Join(exportedVendorPublicLibraries, " "))
 
 	sort.Strings(lsdumpPaths)
 	ctx.Strict("LSDUMP_PATHS", strings.Join(lsdumpPaths, " "))
@@ -196,7 +207,7 @@ func makeVarsToolchain(ctx android.MakeVarsContext, secondPrefix string,
 		hod = "Device"
 	}
 
-	if target.Os.Class == android.Host && Bool(ctx.Config().ProductVariables.HostStaticBinaries) {
+	if target.Os.Class == android.Host && ctx.Config().HostStaticBinaries() {
 		productExtraLdflags += "-static"
 	}
 
@@ -217,6 +228,12 @@ func makeVarsToolchain(ctx android.MakeVarsContext, secondPrefix string,
 	}, " "))
 	ctx.Strict(makePrefix+"GLOBAL_LDFLAGS", strings.Join([]string{
 		fmt.Sprintf("${config.%sGlobalLdflags}", hod),
+		toolchain.Ldflags(),
+		toolchain.ToolchainLdflags(),
+		productExtraLdflags,
+	}, " "))
+	ctx.Strict(makePrefix+"GLOBAL_LLDFLAGS", strings.Join([]string{
+		fmt.Sprintf("${config.%sGlobalLldflags}", hod),
 		toolchain.Ldflags(),
 		toolchain.ToolchainLdflags(),
 		productExtraLdflags,
@@ -265,6 +282,13 @@ func makeVarsToolchain(ctx android.MakeVarsContext, secondPrefix string,
 		ctx.Strict(clangPrefix+"GLOBAL_LDFLAGS", strings.Join([]string{
 			fmt.Sprintf("${config.%sGlobalLdflags}", hod),
 			toolchain.ClangLdflags(),
+			toolchain.ToolchainClangLdflags(),
+			productExtraLdflags,
+			clangExtras,
+		}, " "))
+		ctx.Strict(clangPrefix+"GLOBAL_LLDFLAGS", strings.Join([]string{
+			fmt.Sprintf("${config.%sGlobalLldflags}", hod),
+			toolchain.ClangLldflags(),
 			toolchain.ToolchainClangLdflags(),
 			productExtraLdflags,
 			clangExtras,
