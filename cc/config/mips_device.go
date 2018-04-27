@@ -37,6 +37,11 @@ var (
 		"-Wl,--allow-shlib-undefined",
 	}
 
+	mips32r6Ldflags = []string{
+		"-Wl,--allow-shlib-undefined",
+		"-mips32r6",
+	}
+
 	mipsToolchainLdflags = []string{
 		"-Wl,-melf32ltsmip",
 	}
@@ -115,6 +120,8 @@ func init() {
 	pctx.StaticVariable("MipsLdflags", strings.Join(mipsLdflags, " "))
 	pctx.StaticVariable("MipsCppflags", strings.Join(mipsCppflags, " "))
 	pctx.StaticVariable("MipsIncludeFlags", bionicHeaders("mips"))
+	pctx.StaticVariable("Mips32r6Ldflags", strings.Join(mips32r6Ldflags, " "))
+
 
 	// Clang cflags
 	pctx.StaticVariable("MipsClangCflags", strings.Join(ClangFilterUnknownCflags(mipsClangCflags), " "))
@@ -136,6 +143,7 @@ type toolchainMips struct {
 	cflags, clangCflags                   string
 	toolchainCflags, toolchainClangCflags string
 	mipsSanitizerRuntimeLibraryArch       string
+	ldflags                               string
 }
 
 func (t *toolchainMips) Name() string {
@@ -171,7 +179,7 @@ func (t *toolchainMips) Cppflags() string {
 }
 
 func (t *toolchainMips) Ldflags() string {
-	return "${config.MipsLdflags}"
+	return t.ldflags
 }
 
 func (t *toolchainMips) IncludeFlags() string {
@@ -203,7 +211,7 @@ func (t *toolchainMips) ClangCppflags() string {
 }
 
 func (t *toolchainMips) ClangLdflags() string {
-	return "${config.MipsClangLdflags}"
+	return t.ldflags
 }
 
 func (t *toolchainMips) ClangLldflags() string {
@@ -217,10 +225,13 @@ func (t *toolchainMips) SanitizerRuntimeLibraryArch() string {
 
 func mipsToolchainFactory(arch android.Arch) Toolchain {
 	var mipsSanitizerRuntimeLibraryArchLocal string
+	var mipsLdFlags string
 	if arch.ArchVariant == "mips32r6" {
 		mipsSanitizerRuntimeLibraryArchLocal = "mips32r6"
+		mipsLdFlags = "${config.Mips32r6Ldflags}"
 	} else {
 		mipsSanitizerRuntimeLibraryArchLocal = "mips"
+		mipsLdFlags = "${config.MipsLdflags}"
 	}
 
 	return &toolchainMips{
@@ -228,6 +239,7 @@ func mipsToolchainFactory(arch android.Arch) Toolchain {
 		clangCflags:          "${config.MipsClangCflags}",
 		toolchainCflags:      "${config.Mips" + arch.ArchVariant + "VariantCflags}",
 		toolchainClangCflags: "${config.Mips" + arch.ArchVariant + "VariantClangCflags}",
+		ldflags:              mipsLdFlags,
 		mipsSanitizerRuntimeLibraryArch: mipsSanitizerRuntimeLibraryArchLocal,
 	}
 }
