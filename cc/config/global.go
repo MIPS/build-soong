@@ -99,7 +99,7 @@ var (
 
 	hostGlobalLdflags = []string{}
 
-	hostGlobalLldflags = []string{}
+	hostGlobalLldflags = []string{"-fuse-ld=lld"}
 
 	commonGlobalCppflags = []string{
 		"-Wsign-promo",
@@ -124,8 +124,8 @@ var (
 
 	// prebuilts/clang default settings.
 	ClangDefaultBase         = "prebuilts/clang/host"
-	ClangDefaultVersion      = "clang-4679922"
-	ClangDefaultShortVersion = "7.0.1"
+	ClangDefaultVersion      = "clang-r328903"
+	ClangDefaultShortVersion = "7.0.2"
 
 	// Directories with warnings from Android.bp files.
 	WarningAllowedProjects = []string{

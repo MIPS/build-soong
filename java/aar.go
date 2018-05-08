@@ -25,6 +25,8 @@ import (
 type AndroidLibraryDependency interface {
 	Dependency
 	ExportPackage() android.Path
+	ExportedProguardFlagFiles() android.Paths
+	ExportedStaticPackages() android.Paths
 }
 
 func init() {
@@ -57,12 +59,13 @@ type aaptProperties struct {
 }
 
 type aapt struct {
-	aaptSrcJar          android.Path
-	exportPackage       android.Path
-	manifestPath        android.Path
-	proguardOptionsFile android.Path
-	rroDirs             android.Paths
-	rTxt                android.Path
+	aaptSrcJar            android.Path
+	exportPackage         android.Path
+	manifestPath          android.Path
+	proguardOptionsFile   android.Path
+	rroDirs               android.Paths
+	rTxt                  android.Path
+	extraAaptPackagesFile android.Path
 
 	aaptProperties aaptProperties
 }
@@ -76,14 +79,11 @@ func (a *aapt) aapt2Flags(ctx android.ModuleContext, sdkVersion string) (flags [
 
 	hasVersionCode := false
 	hasVersionName := false
-	hasProduct := false
 	for _, f := range a.aaptProperties.Aaptflags {
 		if strings.HasPrefix(f, "--version-code") {
 			hasVersionCode = true
 		} else if strings.HasPrefix(f, "--version-name") {
 			hasVersionName = true
-		} else if strings.HasPrefix(f, "--product") {
-			hasProduct = true
 		}
 	}
 
@@ -125,35 +125,20 @@ func (a *aapt) aapt2Flags(ctx android.ModuleContext, sdkVersion string) (flags [
 	linkFlags = append(linkFlags, android.JoinWithPrefix(assetDirs.Strings(), "-A "))
 	linkDeps = append(linkDeps, assetFiles...)
 
-	staticLibs, libDeps, libFlags := aaptLibs(ctx, sdkVersion)
+	transitiveStaticLibs, libDeps, libFlags := aaptLibs(ctx, sdkVersion)
 
-	overlayFiles = append(overlayFiles, staticLibs...)
+	overlayFiles = append(overlayFiles, transitiveStaticLibs...)
 	linkDeps = append(linkDeps, libDeps...)
 	linkFlags = append(linkFlags, libFlags...)
 
 	// SDK version flags
 	switch sdkVersion {
 	case "", "current", "system_current", "test_current":
-		sdkVersion = proptools.NinjaEscape([]string{ctx.Config().AppsDefaultVersionName()})[0]
+		sdkVersion = proptools.NinjaEscape([]string{ctx.Config().DefaultAppTargetSdk()})[0]
 	}
 
 	linkFlags = append(linkFlags, "--min-sdk-version "+sdkVersion)
 	linkFlags = append(linkFlags, "--target-sdk-version "+sdkVersion)
-
-	// Product characteristics
-	if !hasProduct && len(ctx.Config().ProductAAPTCharacteristics()) > 0 {
-		linkFlags = append(linkFlags, "--product", ctx.Config().ProductAAPTCharacteristics())
-	}
-
-	// Product AAPT config
-	for _, aaptConfig := range ctx.Config().ProductAAPTConfig() {
-		linkFlags = append(linkFlags, "-c", aaptConfig)
-	}
-
-	// Product AAPT preferred config
-	if len(ctx.Config().ProductAAPTPreferredConfig()) > 0 {
-		linkFlags = append(linkFlags, "--preferred-density", ctx.Config().ProductAAPTPreferredConfig())
-	}
 
 	// Version code
 	if !hasVersionCode {
@@ -161,7 +146,16 @@ func (a *aapt) aapt2Flags(ctx android.ModuleContext, sdkVersion string) (flags [
 	}
 
 	if !hasVersionName {
-		versionName := proptools.NinjaEscape([]string{ctx.Config().AppsDefaultVersionName()})[0]
+		var versionName string
+		if ctx.ModuleName() == "framework-res" {
+			// Some builds set AppsDefaultVersionName() to include the build number ("O-123456").  aapt2 copies the
+			// version name of framework-res into app manifests as compileSdkVersionCodename, which confuses things
+			// if it contains the build number.  Use the DefaultAppTargetSdk instead.
+			versionName = ctx.Config().DefaultAppTargetSdk()
+		} else {
+			versionName = ctx.Config().AppsDefaultVersionName()
+		}
+		versionName = proptools.NinjaEscape([]string{versionName})[0]
 		linkFlags = append(linkFlags, "--version-name ", versionName)
 	}
 
@@ -186,6 +180,8 @@ func (a *aapt) buildActions(ctx android.ModuleContext, sdkVersion string, extraL
 	srcJar := android.PathForModuleGen(ctx, "R.jar")
 	proguardOptionsFile := android.PathForModuleGen(ctx, "proguard.options")
 	rTxt := android.PathForModuleOut(ctx, "R.txt")
+	// This file isn't used by Soong, but is generated for exporting
+	extraPackages := android.PathForModuleOut(ctx, "extra_packages")
 
 	var compiledRes, compiledOverlay android.Paths
 	for _, dir := range resDirs {
@@ -197,7 +193,7 @@ func (a *aapt) buildActions(ctx android.ModuleContext, sdkVersion string, extraL
 
 	compiledOverlay = append(compiledOverlay, overlayFiles...)
 
-	aapt2Link(ctx, packageRes, srcJar, proguardOptionsFile, rTxt,
+	aapt2Link(ctx, packageRes, srcJar, proguardOptionsFile, rTxt, extraPackages,
 		linkFlags, linkDeps, compiledRes, compiledOverlay)
 
 	a.aaptSrcJar = srcJar
@@ -205,11 +201,14 @@ func (a *aapt) buildActions(ctx android.ModuleContext, sdkVersion string, extraL
 	a.manifestPath = manifestPath
 	a.proguardOptionsFile = proguardOptionsFile
 	a.rroDirs = rroDirs
+	a.extraAaptPackagesFile = extraPackages
 	a.rTxt = rTxt
 }
 
 // aaptLibs collects libraries from dependencies and sdk_version and converts them into paths
-func aaptLibs(ctx android.ModuleContext, sdkVersion string) (staticLibs, deps android.Paths, flags []string) {
+func aaptLibs(ctx android.ModuleContext, sdkVersion string) (transitiveStaticLibs, deps android.Paths,
+	flags []string) {
+
 	var sharedLibs android.Paths
 
 	sdkDep := decodeSdkDep(ctx, sdkVersion)
@@ -219,7 +218,8 @@ func aaptLibs(ctx android.ModuleContext, sdkVersion string) (staticLibs, deps an
 
 	ctx.VisitDirectDeps(func(module android.Module) {
 		var exportPackage android.Path
-		if aarDep, ok := module.(AndroidLibraryDependency); ok {
+		aarDep, _ := module.(AndroidLibraryDependency)
+		if aarDep != nil {
 			exportPackage = aarDep.ExportPackage()
 		}
 
@@ -230,15 +230,16 @@ func aaptLibs(ctx android.ModuleContext, sdkVersion string) (staticLibs, deps an
 			}
 		case staticLibTag:
 			if exportPackage != nil {
-				staticLibs = append(staticLibs, exportPackage)
+				transitiveStaticLibs = append(transitiveStaticLibs, exportPackage)
+				transitiveStaticLibs = append(transitiveStaticLibs, aarDep.ExportedStaticPackages()...)
 			}
 		}
 	})
 
 	deps = append(deps, sharedLibs...)
-	deps = append(deps, staticLibs...)
+	deps = append(deps, transitiveStaticLibs...)
 
-	if len(staticLibs) > 0 {
+	if len(transitiveStaticLibs) > 0 {
 		flags = append(flags, "--auto-add-overlay")
 	}
 
@@ -246,7 +247,9 @@ func aaptLibs(ctx android.ModuleContext, sdkVersion string) (staticLibs, deps an
 		flags = append(flags, "-I "+sharedLib.String())
 	}
 
-	return staticLibs, deps, flags
+	transitiveStaticLibs = android.FirstUniquePaths(transitiveStaticLibs)
+
+	return transitiveStaticLibs, deps, flags
 }
 
 type AndroidLibrary struct {
@@ -256,6 +259,17 @@ type AndroidLibrary struct {
 	androidLibraryProperties androidLibraryProperties
 
 	aarFile android.WritablePath
+
+	exportedProguardFlagFiles android.Paths
+	exportedStaticPackages    android.Paths
+}
+
+func (a *AndroidLibrary) ExportedProguardFlagFiles() android.Paths {
+	return a.exportedProguardFlagFiles
+}
+
+func (a *AndroidLibrary) ExportedStaticPackages() android.Paths {
+	return a.exportedStaticPackages
 }
 
 var _ AndroidLibraryDependency = (*AndroidLibrary)(nil)
@@ -288,6 +302,17 @@ func (a *AndroidLibrary) GenerateAndroidBuildActions(ctx android.ModuleContext) 
 		BuildAAR(ctx, a.aarFile, a.outputFile, a.manifestPath, a.rTxt, res)
 		ctx.CheckbuildFile(a.aarFile)
 	}
+
+	ctx.VisitDirectDeps(func(m android.Module) {
+		if lib, ok := m.(AndroidLibraryDependency); ok && ctx.OtherModuleDependencyTag(m) == staticLibTag {
+			a.exportedProguardFlagFiles = append(a.exportedProguardFlagFiles, lib.ExportedProguardFlagFiles()...)
+			a.exportedStaticPackages = append(a.exportedStaticPackages, lib.ExportPackage())
+			a.exportedStaticPackages = append(a.exportedStaticPackages, lib.ExportedStaticPackages()...)
+		}
+	})
+
+	a.exportedProguardFlagFiles = android.FirstUniquePaths(a.exportedProguardFlagFiles)
+	a.exportedStaticPackages = android.FirstUniquePaths(a.exportedStaticPackages)
 }
 
 func AndroidLibraryFactory() android.Module {
@@ -325,15 +350,26 @@ type AARImport struct {
 
 	properties AARImportProperties
 
-	classpathFile android.WritablePath
-	proguardFlags android.WritablePath
-	exportPackage android.WritablePath
+	classpathFile         android.WritablePath
+	proguardFlags         android.WritablePath
+	exportPackage         android.WritablePath
+	extraAaptPackagesFile android.WritablePath
+
+	exportedStaticPackages android.Paths
 }
 
 var _ AndroidLibraryDependency = (*AARImport)(nil)
 
 func (a *AARImport) ExportPackage() android.Path {
 	return a.exportPackage
+}
+
+func (a *AARImport) ExportedProguardFlagFiles() android.Paths {
+	return android.Paths{a.proguardFlags}
+}
+
+func (a *AARImport) ExportedStaticPackages() android.Paths {
+	return a.exportedStaticPackages
 }
 
 func (a *AARImport) Prebuilt() *android.Prebuilt {
@@ -352,7 +388,7 @@ func (a *AARImport) DepsMutator(ctx android.BottomUpMutatorContext) {
 		}
 	}
 
-	ctx.AddDependency(ctx.Module(), staticLibTag, a.properties.Libs...)
+	ctx.AddDependency(ctx.Module(), libTag, a.properties.Libs...)
 	ctx.AddDependency(ctx.Module(), staticLibTag, a.properties.Static_libs...)
 }
 
@@ -400,6 +436,7 @@ func (a *AARImport) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 	srcJar := android.PathForModuleGen(ctx, "R.jar")
 	proguardOptionsFile := android.PathForModuleGen(ctx, "proguard.options")
 	rTxt := android.PathForModuleOut(ctx, "R.txt")
+	a.extraAaptPackagesFile = android.PathForModuleOut(ctx, "extra_packages")
 
 	var linkDeps android.Paths
 
@@ -412,14 +449,14 @@ func (a *AARImport) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 	linkFlags = append(linkFlags, "--manifest "+manifest.String())
 	linkDeps = append(linkDeps, manifest)
 
-	staticLibs, libDeps, libFlags := aaptLibs(ctx, String(a.properties.Sdk_version))
+	transitiveStaticLibs, libDeps, libFlags := aaptLibs(ctx, String(a.properties.Sdk_version))
 
 	linkDeps = append(linkDeps, libDeps...)
 	linkFlags = append(linkFlags, libFlags...)
 
-	overlayRes := append(android.Paths{flata}, staticLibs...)
+	overlayRes := append(android.Paths{flata}, transitiveStaticLibs...)
 
-	aapt2Link(ctx, a.exportPackage, srcJar, proguardOptionsFile, rTxt,
+	aapt2Link(ctx, a.exportPackage, srcJar, proguardOptionsFile, rTxt, a.extraAaptPackagesFile,
 		linkFlags, linkDeps, nil, overlayRes)
 }
 

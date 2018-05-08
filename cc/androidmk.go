@@ -58,6 +58,8 @@ func (c *Module) AndroidMk() android.AndroidMkData {
 
 	ret := android.AndroidMkData{
 		OutputFile: c.outputFile,
+		Required:   c.Properties.AndroidMkRuntimeLibs,
+
 		Extra: []android.AndroidMkExtraFunc{
 			func(w io.Writer, outputFile android.Path) {
 				if len(c.Properties.Logtags) > 0 {
@@ -243,6 +245,7 @@ func (benchmark *benchmarkDecorator) AndroidMk(ctx AndroidMkContext, ret *androi
 			fmt.Fprintln(w, "LOCAL_COMPATIBILITY_SUITE :=",
 				strings.Join(benchmark.Properties.Test_suites, " "))
 		}
+		fmt.Fprintln(w, "LOCAL_NATIVE_BENCHMARK := true")
 	})
 
 	androidMkWriteTestData(benchmark.data, ctx, ret)

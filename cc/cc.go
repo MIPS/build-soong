@@ -68,6 +68,7 @@ type Deps struct {
 	SharedLibs, LateSharedLibs                  []string
 	StaticLibs, LateStaticLibs, WholeStaticLibs []string
 	HeaderLibs                                  []string
+	RuntimeLibs                                 []string
 
 	ReexportSharedLibHeaders, ReexportStaticLibHeaders, ReexportHeaderLibHeaders []string
 
@@ -164,9 +165,10 @@ type BaseProperties struct {
 	// Minimum sdk version supported when compiling against the ndk
 	Sdk_version *string
 
-	AndroidMkSharedLibs []string `blueprint:"mutated"`
-	HideFromMake        bool     `blueprint:"mutated"`
-	PreventInstall      bool     `blueprint:"mutated"`
+	AndroidMkSharedLibs  []string `blueprint:"mutated"`
+	AndroidMkRuntimeLibs []string `blueprint:"mutated"`
+	HideFromMake         bool     `blueprint:"mutated"`
+	PreventInstall       bool     `blueprint:"mutated"`
 
 	UseVndk bool `blueprint:"mutated"`
 
@@ -193,6 +195,15 @@ type VendorProperties struct {
 	//
 	// Nothing happens if BOARD_VNDK_VERSION isn't set in the BoardConfig.mk
 	Vendor_available *bool
+
+	// whether this module is capable of being loaded with other instance
+	// (possibly an older version) of the same module in the same process.
+	// Currently, a shared library that is a member of VNDK (vndk: {enabled: true})
+	// can be double loaded in a vendor process if the library is also a
+	// (direct and indirect) dependency of an LLNDK library. Such libraries must be
+	// explicitly marked as `double_loadable: true` by the owner, or the dependency
+	// from the LLNDK lib should be cut if the lib is not designed to be double loaded.
+	Double_loadable *bool
 }
 
 type UnusedProperties struct {
@@ -297,6 +308,7 @@ var (
 	ndkStubDepTag         = dependencyTag{name: "ndk stub", library: true}
 	ndkLateStubDepTag     = dependencyTag{name: "ndk late stub", library: true}
 	vndkExtDepTag         = dependencyTag{name: "vndk extends", library: true}
+	runtimeDepTag         = dependencyTag{name: "runtime lib"}
 )
 
 // Module contains the properties and members used by all C/C++ module types, and implements
@@ -658,7 +670,6 @@ func orderStaticModuleDeps(module *Module, staticDeps []*Module, sharedDeps []*M
 }
 
 func (c *Module) GenerateAndroidBuildActions(actx android.ModuleContext) {
-
 	ctx := &moduleContext{
 		ModuleContext: actx,
 		moduleContextImpl: moduleContextImpl{
@@ -837,6 +848,7 @@ func (c *Module) deps(ctx DepsContext) Deps {
 	deps.SharedLibs = android.LastUniqueStrings(deps.SharedLibs)
 	deps.LateSharedLibs = android.LastUniqueStrings(deps.LateSharedLibs)
 	deps.HeaderLibs = android.LastUniqueStrings(deps.HeaderLibs)
+	deps.RuntimeLibs = android.LastUniqueStrings(deps.RuntimeLibs)
 
 	for _, lib := range deps.ReexportSharedLibHeaders {
 		if !inList(lib, deps.SharedLibs) {
@@ -977,6 +989,9 @@ func (c *Module) DepsMutator(actx android.BottomUpMutatorContext) {
 
 	actx.AddVariationDependencies([]blueprint.Variation{{"link", "shared"}}, lateSharedDepTag,
 		deps.LateSharedLibs...)
+
+	actx.AddVariationDependencies([]blueprint.Variation{{"link", "shared"}}, runtimeDepTag,
+		deps.RuntimeLibs...)
 
 	actx.AddDependency(c, genSourceDepTag, deps.GeneratedSources...)
 
@@ -1127,6 +1142,34 @@ func checkLinkType(ctx android.ModuleContext, from *Module, to *Module, tag depe
 	}
 }
 
+// Tests whether the dependent library is okay to be double loaded inside a single process.
+// If a library is a member of VNDK and at the same time dependencies of an LLNDK library,
+// it is subject to be double loaded. Such lib should be explicitly marked as double_loaded: true
+// or as vndk-sp (vndk: { enabled: true, support_system_process: true}).
+func checkDoubleLoadableLibries(ctx android.ModuleContext, from *Module, to *Module) {
+	if _, ok := from.linker.(*libraryDecorator); !ok {
+		return
+	}
+
+	if inList(ctx.ModuleName(), llndkLibraries) ||
+		(from.useVndk() && Bool(from.VendorProperties.Double_loadable)) {
+		_, depIsLlndk := to.linker.(*llndkStubDecorator)
+		depIsVndkSp := false
+		if to.vndkdep != nil && to.vndkdep.isVndkSp() {
+			depIsVndkSp = true
+		}
+		depIsVndk := false
+		if to.vndkdep != nil && to.vndkdep.isVndk() {
+			depIsVndk = true
+		}
+		depIsDoubleLoadable := Bool(to.VendorProperties.Double_loadable)
+		if !depIsLlndk && !depIsVndkSp && !depIsDoubleLoadable && depIsVndk {
+			ctx.ModuleErrorf("links VNDK library %q that isn't double_loadable.",
+				ctx.OtherModuleName(to))
+		}
+	}
+}
+
 // Convert dependencies to paths.  Returns a PathDeps containing paths
 func (c *Module) depsToPaths(ctx android.ModuleContext) PathDeps {
 	var depPaths PathDeps
@@ -1225,6 +1268,7 @@ func (c *Module) depsToPaths(ctx android.ModuleContext) PathDeps {
 			}
 
 			checkLinkType(ctx, c, ccDep, t)
+			checkDoubleLoadableLibries(ctx, c, ccDep)
 		}
 
 		var ptr *android.Paths
@@ -1308,28 +1352,34 @@ func (c *Module) depsToPaths(ctx android.ModuleContext) PathDeps {
 			*depPtr = append(*depPtr, dep.Path())
 		}
 
-		// Export the shared libs to Make.
-		switch depTag {
-		case sharedDepTag, sharedExportDepTag, lateSharedDepTag:
+		makeLibName := func(depName string) string {
 			libName := strings.TrimSuffix(depName, llndkLibrarySuffix)
 			libName = strings.TrimSuffix(libName, vendorPublicLibrarySuffix)
 			libName = strings.TrimPrefix(libName, "prebuilt_")
 			isLLndk := inList(libName, llndkLibraries)
 			isVendorPublicLib := inList(libName, vendorPublicLibraries)
-			var makeLibName string
 			bothVendorAndCoreVariantsExist := ccDep.hasVendorVariant() || isLLndk
 			if c.useVndk() && bothVendorAndCoreVariantsExist {
 				// The vendor module in Make will have been renamed to not conflict with the core
 				// module, so update the dependency name here accordingly.
-				makeLibName = libName + vendorSuffix
+				return libName + vendorSuffix
 			} else if (ctx.Platform() || ctx.ProductSpecific()) && isVendorPublicLib {
-				makeLibName = libName + vendorPublicLibrarySuffix
+				return libName + vendorPublicLibrarySuffix
 			} else {
-				makeLibName = libName
+				return libName
 			}
+		}
+
+		// Export the shared libs to Make.
+		switch depTag {
+		case sharedDepTag, sharedExportDepTag, lateSharedDepTag:
 			// Note: the order of libs in this list is not important because
 			// they merely serve as Make dependencies and do not affect this lib itself.
-			c.Properties.AndroidMkSharedLibs = append(c.Properties.AndroidMkSharedLibs, makeLibName)
+			c.Properties.AndroidMkSharedLibs = append(
+				c.Properties.AndroidMkSharedLibs, makeLibName(depName))
+		case runtimeDepTag:
+			c.Properties.AndroidMkRuntimeLibs = append(
+				c.Properties.AndroidMkRuntimeLibs, makeLibName(depName))
 		}
 	})
 

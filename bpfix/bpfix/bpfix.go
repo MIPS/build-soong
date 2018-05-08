@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/blueprint/parser"
 )
@@ -220,6 +221,10 @@ func (f *Fixer) rewriteIncorrectAndroidmkAndroidLibraries() error {
 			continue
 		}
 
+		if !strings.HasPrefix(mod.Type, "java_") && !strings.HasPrefix(mod.Type, "android_") {
+			continue
+		}
+
 		hasAndroidLibraries := hasNonEmptyLiteralListProperty(mod, "android_libs")
 		hasStaticAndroidLibraries := hasNonEmptyLiteralListProperty(mod, "android_static_libs")
 		hasResourceDirs := hasNonEmptyLiteralListProperty(mod, "resource_dirs")
@@ -384,7 +389,7 @@ func (f *Fixer) removeMatchingModuleListProperties(canonicalName string, legacyN
 			continue
 		}
 		legacyList, ok := getLiteralListProperty(mod, legacyName)
-		if !ok {
+		if !ok || len(legacyList.Values) == 0 {
 			continue
 		}
 		canonicalList, ok := getLiteralListProperty(mod, canonicalName)
@@ -392,6 +397,10 @@ func (f *Fixer) removeMatchingModuleListProperties(canonicalName string, legacyN
 			continue
 		}
 		filterExpressionList(legacyList, canonicalList)
+
+		if len(legacyList.Values) == 0 {
+			removeProperty(mod, legacyName)
+		}
 	}
 	return nil
 }

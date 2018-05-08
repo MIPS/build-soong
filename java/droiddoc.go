@@ -38,15 +38,13 @@ var (
 				"${config.ZipSyncCmd}",
 				"${config.JavadocCmd}",
 				"${config.SoongZipCmd}",
-				"$JsilverJar",
-				"$DoclavaJar",
 			},
 			Rspfile:        "$out.rsp",
 			RspfileContent: "$in",
 			Restat:         true,
 		},
 		"outDir", "srcJarDir", "stubsDir", "srcJars", "opts",
-		"bootclasspathArgs", "classpathArgs", "sourcepath", "docZip", "JsilverJar", "DoclavaJar")
+		"bootclasspathArgs", "classpathArgs", "sourcepath", "docZip")
 )
 
 func init() {
@@ -151,6 +149,9 @@ type DroiddocProperties struct {
 	// the generated removed API filename by Doclava.
 	Removed_api_filename *string
 
+	// the generated removed Dex API filename by Doclava.
+	Removed_dex_api_filename *string
+
 	// the generated exact API filename by Doclava.
 	Exact_api_filename *string
 
@@ -186,6 +187,7 @@ type Droiddoc struct {
 	privateApiFile    android.WritablePath
 	privateDexApiFile android.WritablePath
 	removedApiFile    android.WritablePath
+	removedDexApiFile android.WritablePath
 	exactApiFile      android.WritablePath
 }
 
@@ -256,7 +258,9 @@ func (j *Javadoc) addDeps(ctx android.BottomUpMutatorContext) {
 func (j *Javadoc) genWhitelistPathPrefixes(whitelistPathPrefixes map[string]bool) {
 	for _, dir := range j.properties.Srcs_lib_whitelist_dirs {
 		for _, pkg := range j.properties.Srcs_lib_whitelist_pkgs {
-			prefix := filepath.Join(dir, pkg)
+			// convert foo.bar.baz to foo/bar/baz
+			pkgAsPath := filepath.Join(strings.Split(pkg, ".")...)
+			prefix := filepath.Join(dir, pkgAsPath)
 			if _, found := whitelistPathPrefixes[prefix]; !found {
 				whitelistPathPrefixes[prefix] = true
 			}
@@ -305,6 +309,20 @@ func (j *Javadoc) collectDeps(ctx android.ModuleContext) deps {
 				}
 			default:
 				panic(fmt.Errorf("unknown dependency %q for %q", otherName, ctx.ModuleName()))
+			}
+		case SdkLibraryDependency:
+			switch tag {
+			case libTag:
+				sdkVersion := String(j.properties.Sdk_version)
+				linkType := javaSdk
+				if strings.HasPrefix(sdkVersion, "system_") || strings.HasPrefix(sdkVersion, "test_") {
+					linkType = javaSystem
+				} else if sdkVersion == "" {
+					linkType = javaPlatform
+				}
+				deps.classpath = append(deps.classpath, dep.HeaderJars(linkType)...)
+			default:
+				ctx.ModuleErrorf("dependency on java_sdk_library %q can only be in libs", otherName)
 			}
 		case android.SourceFileProducer:
 			switch tag {
@@ -553,6 +571,12 @@ func (d *Droiddoc) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 		implicitOutputs = append(implicitOutputs, d.removedApiFile)
 	}
 
+	if String(d.properties.Removed_dex_api_filename) != "" {
+		d.removedDexApiFile = android.PathForModuleOut(ctx, String(d.properties.Removed_dex_api_filename))
+		args = args + " -removedDexApi " + d.removedDexApiFile.String()
+		implicitOutputs = append(implicitOutputs, d.removedDexApiFile)
+	}
+
 	if String(d.properties.Exact_api_filename) != "" {
 		d.exactApiFile = android.PathForModuleOut(ctx, String(d.properties.Exact_api_filename))
 		args = args + " -exactApi " + d.exactApiFile.String()
@@ -561,8 +585,13 @@ func (d *Droiddoc) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 
 	implicits = append(implicits, d.Javadoc.srcJars...)
 
+	jsilver := android.PathForOutput(ctx, "host", ctx.Config().PrebuiltOS(), "framework", "jsilver.jar")
+	doclava := android.PathForOutput(ctx, "host", ctx.Config().PrebuiltOS(), "framework", "doclava.jar")
+	implicits = append(implicits, jsilver)
+	implicits = append(implicits, doclava)
+
 	opts := "-source 1.8 -J-Xmx1600m -J-XX:-OmitStackTraceInFastThrow -XDignore.symbol.file " +
-		"-doclet com.google.doclava.Doclava -docletpath ${config.JsilverJar}:${config.DoclavaJar} " +
+		"-doclet com.google.doclava.Doclava -docletpath " + jsilver.String() + ":" + doclava.String() + " " +
 		"-templatedir " + templateDir + " " + htmlDirArgs + " " + htmlDir2Args + " " +
 		"-hdf page.build " + ctx.Config().BuildId() + "-" + ctx.Config().BuildNumberFromFile() + " " +
 		"-hdf page.now " + `"$$(date -d @$$(cat ` + ctx.Config().Getenv("BUILD_DATETIME_FILE") + `) "+%d %b %Y %k:%M")"` +
@@ -593,8 +622,6 @@ func (d *Droiddoc) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 			"classpathArgs":     classpathArgs,
 			"sourcepath":        strings.Join(d.Javadoc.sourcepaths.Strings(), ":"),
 			"docZip":            d.Javadoc.docZip.String(),
-			"JsilverJar":        "${config.JsilverJar}",
-			"DoclavaJar":        "${config.DoclavaJar}",
 		},
 	})
 }

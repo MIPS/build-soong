@@ -63,6 +63,14 @@ type AndroidApp struct {
 	appProperties appProperties
 }
 
+func (a *AndroidApp) ExportedProguardFlagFiles() android.Paths {
+	return nil
+}
+
+func (a *AndroidApp) ExportedStaticPackages() android.Paths {
+	return nil
+}
+
 var _ AndroidLibraryDependency = (*AndroidApp)(nil)
 
 type certificate struct {
@@ -86,6 +94,28 @@ func (a *AndroidApp) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 		a.properties.Instrument = true
 	}
 
+	hasProduct := false
+	for _, f := range a.aaptProperties.Aaptflags {
+		if strings.HasPrefix(f, "--product") {
+			hasProduct = true
+		}
+	}
+
+	// Product characteristics
+	if !hasProduct && len(ctx.Config().ProductAAPTCharacteristics()) > 0 {
+		linkFlags = append(linkFlags, "--product", ctx.Config().ProductAAPTCharacteristics())
+	}
+
+	// Product AAPT config
+	for _, aaptConfig := range ctx.Config().ProductAAPTConfig() {
+		linkFlags = append(linkFlags, "-c", aaptConfig)
+	}
+
+	// Product AAPT preferred config
+	if len(ctx.Config().ProductAAPTPreferredConfig()) > 0 {
+		linkFlags = append(linkFlags, "--preferred-density", ctx.Config().ProductAAPTPreferredConfig())
+	}
+
 	// TODO: LOCAL_PACKAGE_OVERRIDES
 	//    $(addprefix --rename-manifest-package , $(PRIVATE_MANIFEST_PACKAGE_NAME)) \
 
@@ -94,8 +124,17 @@ func (a *AndroidApp) GenerateAndroidBuildActions(ctx android.ModuleContext) {
 	// apps manifests are handled by aapt, don't let Module see them
 	a.properties.Manifest = nil
 
-	a.Module.extraProguardFlagFiles = append(a.Module.extraProguardFlagFiles,
-		a.proguardOptionsFile)
+	var staticLibProguardFlagFiles android.Paths
+	ctx.VisitDirectDeps(func(m android.Module) {
+		if lib, ok := m.(AndroidLibraryDependency); ok && ctx.OtherModuleDependencyTag(m) == staticLibTag {
+			staticLibProguardFlagFiles = append(staticLibProguardFlagFiles, lib.ExportedProguardFlagFiles()...)
+		}
+	})
+
+	staticLibProguardFlagFiles = android.FirstUniquePaths(staticLibProguardFlagFiles)
+
+	a.Module.extraProguardFlagFiles = append(a.Module.extraProguardFlagFiles, staticLibProguardFlagFiles...)
+	a.Module.extraProguardFlagFiles = append(a.Module.extraProguardFlagFiles, a.proguardOptionsFile)
 
 	if ctx.ModuleName() != "framework-res" {
 		a.Module.compile(ctx, a.aaptSrcJar)
